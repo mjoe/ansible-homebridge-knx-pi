@@ -1,0 +1,22 @@
+{
+  "bridge": {
+    "name": "Homebridge",
+    "username": "CC:22:3D:E3:CE:30",
+    "port": 51826,
+    "pin": "031-45-154"
+  },
+  "platforms": [
+    {
+      "platform": "netatmo",
+      "name": "netatmo platform",
+      "ttl": 5,
+      "auth": {
+        "client_id": "XXXXX Create at https://dev.netatmo.com/",
+        "client_secret": "XXXX Create at https://dev.netatmo.com/",
+        "username": "your netatmo username",
+        "password": "your netatmo password"
+      }
+    }
+  ],
+  "accessories": []
+}

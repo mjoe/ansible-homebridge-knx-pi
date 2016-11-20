@@ -1,0 +1,5 @@
+[raspbian]
+raspberrypi ansible_user=pi ansible_ssh_pass=raspberry host_key_checking=false
+
+[homeberry]
+homeberry ansible_host=192.168.1.10 ansible_user=pi ansible_ssh_pass=raspberry host_key_checking=false

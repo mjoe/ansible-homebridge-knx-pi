@@ -1,0 +1,136 @@
+#!/usr/bin/env ansible-playbook
+---
+- hosts: raspbian
+  gather_facts: yes
+  vars:
+    wifi:
+      ssid: "<wifissid>"
+      password: "<wifipassword>"
+
+  become: true
+  tasks:
+    - name: put network config in place
+      template: src=templates/interfaces dest=/etc/network/interfaces
+
+    - name: put wifi config in place
+      template: src=templates/wpa_supplicant.conf dest=/etc/wpa_supplicant/wpa_supplicant.conf
+
+    - name: set hostname
+      hostname: name=homeberry
+      notify:
+        - Restart server
+        - Wait for server to restart
+
+- hosts: homeberry
+  gather_facts: yes
+  vars:
+    packages_to_install: [ nodejs, automake, build-essential, autoconf, cdbs,
+        libavahi-compat-libdnssd-dev, libusb-1.0-0-dev, git-core, libtool, libsystemd-dev,
+        libsystemd-daemon-dev, dh-systemd, base-files
+      ]
+    npm_packages_to_install: [ homebridge, homebridge-knx, homebridge-netatmo ]
+    update_cache: no
+    rebuild: true
+
+  become: true
+  tasks:
+    - name: Add system user 'homebridge'
+      user: name=homebridge system=yes home=/var/homebridge
+
+    - name: Install raspbian packages with apt-get
+      apt: pkg={{ item }} state=installed update_cache={{ update_cache }}
+      with_items: "{{ packages_to_install }}"
+
+    - name: Download most recent nodejs lts installer
+      get_url: url=https://deb.nodesource.com/setup_6.x dest=/tmp/nodejs-installer.sh mode=750
+
+    - name: Execute nodejs installer
+      command: /tmp/nodejs-installer.sh
+
+    - name: Install node.js packages with npm
+      npm: name={{ item }} global=yes
+      with_items: "{{ npm_packages_to_install }}"
+
+    - name: Download pthsem and unpack directly from HTTPS source
+      when: rebuild
+      unarchive:
+        src: "https://www.auto.tuwien.ac.at/~mkoegler/pth/pthsem_2.0.8.tar.gz"
+        dest: "/home/pi"
+        copy: no
+
+    - name: Build pthsem from source
+      when: rebuild
+      command: dpkg-buildpackage -b -uc
+      args:
+        chdir: /home/pi/pthsem-2.0.8
+
+    - name: Clone knxd from github
+      when: rebuild
+      git: repo=https://github.com/knxd/knxd.git dest=/home/pi/knxd
+
+    - name: Build knxd from source
+      when: rebuild
+      command: dpkg-buildpackage -b -uc
+      args:
+        chdir: /home/pi/knxd
+
+    - name: Get deb-package names from previous builds
+      shell: ls -1 /home/pi/libpthsem*.deb /home/pi/knxd_*.deb /home/pi/knxd-tools_*.deb
+      register: build_packages
+      tags:
+        - install
+
+    - name: Install pthsem and knxd packages with apt-get
+      apt: deb={{ item }}
+      with_items: "{{ build_packages.stdout_lines }}"
+      tags:
+        - install
+  
+    - name: deploy default homebridge settings
+      template: src=templates/homebridge.j2 dest=/etc/default/homebridge
+      tags: 
+        - install
+
+    - name: Install homebridge systemd service
+      template: src=templates/homebridge.service.j2 dest=/etc/systemd/system/homebridge.service
+      notify: reload systemd
+      tags: 
+        - install
+
+    - name: Install knxd settings
+      template: src=templates/knxd.conf.j2 dest=/etc/knxd.conf
+      notify: restart knxd
+      tags: 
+        - install
+
+    - name: deploy new homebridge config
+      template: src=templates/config.json.j2 dest=/var/homebridge/config.json owner=homebridge group=homebridge
+      notify: restart homebridge
+      tags: 
+        - deploy
+
+    - name: deploy new homebridge-knx config
+      template: src=templates/knx_config.json.j2 dest=/var/homebridge/knx_config.json owner=homebridge group=homebridge
+      notify: restart homebridge
+      tags: 
+        - deploy
+
+  handlers:
+    - name: Restart server
+      shell: sleep 2 && shutdown -r now "Reboot triggered by Ansible"
+      async: 1
+      poll: 0
+      ignore_errors: true
+      
+    - name: Wait for server to restart
+      local_action: wait_for host={{ ansible_host }} state=started port=22 delay=30 timeout=300 connect_timeout=15
+      become: false
+
+    - name: reload systemd
+      command: systemctl daemon-reload
+
+    - name: restart homebridge
+      service: name=homebridge enabled=yes state=restarted
+
+    - name: restart knxd
+      service: name=knxd enabled=yes state=restarted
