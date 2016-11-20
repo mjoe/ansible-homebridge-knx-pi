@@ -1,6 +1,6 @@
 # Bootstrap
 
-This is simple ansible playbook to setup homebridge with the plugins knx and netatmo on your Raspberry Pi running a fresh Raspbian installation on it.
+This is a simple Ansible playbook to setup homebridge with knx and netatmo plugins on your Raspberry Pi running a fresh Raspbian installation on it.
 
 ```bash
 # Install Ansible and Git, as you like.
